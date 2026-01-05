@@ -6,6 +6,7 @@ from tifffile import imread, imwrite
 import numpy as np
 from skimage.color import rgb2gray
 from collections import defaultdict
+from scipy import stats
 import re
 
 def list_images (directory_path, format=None):
@@ -109,3 +110,26 @@ def generate_multichannel_tif(data_folder):
         stack = np.stack(slices, axis=0)
         out_path = output_dir / f"{well}f{frame}.tif"
         imwrite(out_path, stack)
+
+def remap_labels(nuclei_labels, cytoplasm_labels):
+
+    # Label-to-label remapping: each nucleus inherits the cytoplasm label value it lies in
+    # Might cause some issues with multinucleated cells (will try to filter them out later)
+
+    out = np.zeros_like(nuclei_labels)
+
+    for nid in np.unique(nuclei_labels):
+        if nid == 0:
+            continue
+        
+        mask = nuclei_labels == nid
+        cyto_vals = cytoplasm_labels[mask]
+        cyto_vals = cyto_vals[cyto_vals != 0]  # ignore background
+        
+        if len(cyto_vals) == 0:
+            continue
+        
+        cyto_id = stats.mode(cyto_vals, keepdims=False).mode
+        out[mask] = cyto_id
+
+    return out
