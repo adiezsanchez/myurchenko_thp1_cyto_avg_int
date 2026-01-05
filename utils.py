@@ -1,6 +1,12 @@
 
 from pathlib import Path
+from tqdm import tqdm
 import pyclesperanto_prototype as cle
+from tifffile import imread, imwrite
+import numpy as np
+from skimage.color import rgb2gray
+from collections import defaultdict
+import re
 
 def list_images (directory_path, format=None):
 
@@ -37,3 +43,69 @@ def simulate_cytoplasm(nuclei_labels, dilation_radius=2, erosion_radius=0):
     cytoplasm[nuclei_mask] = 0
 
     return cytoplasm
+
+def grayscale_skimage(img):
+
+    # Case 1: TIFF loads as (3, H, W)
+    if img.ndim == 3 and img.shape[0] == 3 and img.shape[-1] != 3:
+        img = np.moveaxis(img, 0, -1)  # → (H, W, 3)
+    
+    # Case 2: Already (H, W, 3) → fine
+    if img.ndim == 3 and img.shape[-1] == 3:
+        gray01 = rgb2gray(img)  # float64 in [0,1]
+    
+    else:
+        raise ValueError(f"Unexpected image shape {img.shape}")
+
+    # Restore original dtype
+    if np.issubdtype(img.dtype, np.integer):
+        maxval = np.iinfo(img.dtype).max
+        gray = (gray01 * maxval).astype(img.dtype)
+    else:
+        gray = gray01.astype(img.dtype)
+
+    return gray
+
+def generate_multichannel_tif(data_folder):
+
+    # Parse all paths to the single channel image files
+    images = list_images(data_folder, format="tif")
+
+    # Create a folder to store the resulting multichannel tif files
+    output_dir = Path(data_folder) / "processed_tiffs"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Provide feedback to user
+    print("\nProcessing input single channel .tif into multichannel .tif files \n")
+    print(f"Processed .tif files will be saved under: {output_dir}\n")
+
+    # Regex to extract well, frame, channel
+    pattern = re.compile(
+        r'.*_(?P<well>[A-Z]\d{2})f(?P<frame>\d{2})d(?P<channel>\d)\.TIF$',
+        re.IGNORECASE
+    )
+
+    # Group image filenames by (well, frame), and within each group
+    # map channel number -> corresponding image file path
+    groups = defaultdict(dict)
+    for f in images:
+        m = pattern.match(f)
+        if m:
+            groups[(m.group('well'), m.group('frame'))][int(m.group('channel'))] = f
+
+    # Build & save stacks
+    for (well, frame), channels in tqdm(groups.items()):
+        expected = [1, 2, 4]
+        if not all(c in channels for c in expected):
+            print(f"Skipping incomplete {well}f{frame}")
+            continue
+
+        slices = []
+        for c in expected:
+            rgb = imread(channels[c], series=None)
+            gray = grayscale_skimage(rgb)
+            slices.append(gray)
+
+        stack = np.stack(slices, axis=0)
+        out_path = output_dir / f"{well}f{frame}.tif"
+        imwrite(out_path, stack)
