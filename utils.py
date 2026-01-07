@@ -3,7 +3,9 @@ from pathlib import Path
 from tqdm import tqdm
 import pyclesperanto_prototype as cle
 from tifffile import imread, imwrite
+import pandas as pd
 import numpy as np
+from skimage.measure import regionprops_table
 from skimage.color import rgb2gray
 from collections import defaultdict
 from scipy import stats
@@ -133,3 +135,62 @@ def remap_labels(nuclei_labels, cytoplasm_labels):
         out[mask] = cyto_id
 
     return out
+
+def rename_cyto_nuclei_cols(props_df, compartment, scikit_props):
+
+    for prop in scikit_props:
+        if prop != "label":
+            # Rename intensity_mean column to indicate the specific cellular compartment
+            props_df.rename(columns={prop: f"{compartment}_{prop}"}, inplace=True)
+
+    return props_df
+
+def extract_features(img, nuclei_remapped, cytoplasm_labels, descriptor_dict, scikit_props=["label", "intensity_mean", "area"]):
+
+    # Create an empty list to hold each props_df (for nuclei and cytoplasm)
+    props_list = []
+
+    # Extract nuclei features
+    props = regionprops_table(label_image=nuclei_remapped,
+                            intensity_image=img[0],
+                            properties=scikit_props)
+
+    # Convert to dataframe
+    props_df = pd.DataFrame(props)
+
+    # Rename feature column to indicate the specific cellular compartment
+    props_df = rename_cyto_nuclei_cols(props_df, compartment="nuclei", scikit_props=scikit_props)
+
+    # Append each props_df to props_list
+    props_list.append(props_df)
+
+    # Extract cytoplasm features
+    props = regionprops_table(label_image=cytoplasm_labels,
+                            intensity_image=img[0],
+                            properties=scikit_props)
+
+    # Convert to dataframe
+    props_df = pd.DataFrame(props)
+
+    # Rename intensity_mean column to indicate the specific image
+    props_df = rename_cyto_nuclei_cols(props_df, compartment="cytoplasm", scikit_props=scikit_props)
+
+    # Append each props_df to props_list
+    props_list.append(props_df)
+
+    # Initialize the df with the first df in the list
+    props_df = props_list[0]
+    # Start looping from the second df in the list
+    for df in props_list[1:]:
+        props_df = props_df.merge(df, on="label")
+
+    # Add each key-value pair from descriptor_dict to props_df at the specified position
+    insertion_position = 0
+    for key, value in descriptor_dict.items():
+        props_df.insert(insertion_position, key, value)
+        insertion_position += 1  # Increment position to maintain the order of keys in descriptor_dict
+
+    # Calculate ratio of cytoplasm to nuclei area to filter out incorrectly segmented entities
+    props_df["cyto_to_nuclei_ratio"] = props_df["cytoplasm_area"] / props_df["nuclei_area"]
+
+    return props_df
