@@ -136,6 +136,21 @@ def remap_labels(nuclei_labels, cytoplasm_labels):
 
     return out
 
+def extract_img_metadata (img_filepath, verbose = False):
+    
+    # Extract image metadata from filename
+    field_of_view = Path(img_filepath).stem.split("f")[1]
+    well_id = Path(img_filepath).stem.split("f")[0]
+
+    # Create a dictionary containing all image descriptors
+    descriptor_dict = {"well_id": well_id, "FOV": field_of_view}
+
+    if verbose:
+
+        print(f"Visualizing well: {well_id}, FOV: {field_of_view}")
+
+    return descriptor_dict
+
 def rename_cyto_nuclei_cols(props_df, compartment, scikit_props):
 
     for prop in scikit_props:
