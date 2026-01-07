@@ -104,13 +104,18 @@ def generate_multichannel_tif(data_folder):
             continue
 
         slices = []
+        # Check if the file already exists and skip generating and saving
+        out_path = output_dir / f"{well}f{frame}.tif"
+        if out_path.exists():
+            continue
+
         for c in expected:
             rgb = imread(channels[c], series=None)
             gray = grayscale_skimage(rgb)
             slices.append(gray)
 
         stack = np.stack(slices, axis=0)
-        out_path = output_dir / f"{well}f{frame}.tif"
+        
         imwrite(out_path, stack)
 
 def remap_labels(nuclei_labels, cytoplasm_labels):
