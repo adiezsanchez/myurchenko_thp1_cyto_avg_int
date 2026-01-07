@@ -6,6 +6,7 @@ from tifffile import imread, imwrite
 import pandas as pd
 import numpy as np
 from skimage.measure import regionprops_table
+from skimage.segmentation import clear_border
 from skimage.color import rgb2gray
 from collections import defaultdict
 from scipy import stats
@@ -140,6 +141,16 @@ def remap_labels(nuclei_labels, cytoplasm_labels):
         out[mask] = cyto_id
 
     return out
+
+def remove_border_cells (cytoplasm_labels, nuclei_remapped):
+
+    # Remove cytoplasm labels touching the image border
+    cytoplasm_labels = clear_border(cytoplasm_labels)
+
+    # Remove corresponding nuclei
+    nuclei_remapped[~np.isin(nuclei_remapped, np.unique(cytoplasm_labels))] = 0
+
+    return cytoplasm_labels, nuclei_remapped
 
 def extract_img_metadata (img_filepath, verbose = False):
     
